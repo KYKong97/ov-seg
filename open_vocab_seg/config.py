@@ -87,6 +87,7 @@ def add_mask_former_default_config(cfg):
     cfg.MODEL.SWIN.PATCH_NORM = True
     cfg.MODEL.SWIN.OUT_FEATURES = ["res2", "res3", "res4", "res5"]
     cfg.MODEL.SWIN.PRETRAINED_WINDOW_SIZES = []
+    cfg.MODEL.SWIN.USE_CHECKPOINT = False
 
 
 def add_our_config(cfg):
