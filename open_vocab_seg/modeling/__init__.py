@@ -2,6 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. All Rights Reserved
 
 from .backbone.swin import D2SwinTransformer
+from .backbone.swin_v2 import D2SwinTransformerV2
 from .backbone.clip_resnet import D2ModifiedResNet
 from .heads.mask_former_head import MaskFormerHead
 from .heads.open_vocab_mask_former_head import OpenVocabMaskFormerHead
