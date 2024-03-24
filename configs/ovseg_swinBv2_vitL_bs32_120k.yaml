@@ -12,6 +12,7 @@ MODEL:
     DROP_PATH_RATE: 0.2
     PATCH_NORM: True
     PRETRAIN_IMG_SIZE: 384
+    USE_CHECKPOINT: False
     PRETRAINED_WINDOW_SIZES: [ 12, 12, 12, 6 ]
   WEIGHTS: "swinv2_base_patch4_window12_384_22k.pkl"
   PIXEL_MEAN: [123.675, 116.280, 103.530]
@@ -42,6 +43,7 @@ MODEL:
     ENC_LAYERS: 0
     DEC_LAYERS: 6
     PRE_NORM: False
+    
   CLIP_ADAPTER:
     TEXT_TEMPLATES: "vild"
     CLIP_MODEL_NAME: "ViT-L/14"
