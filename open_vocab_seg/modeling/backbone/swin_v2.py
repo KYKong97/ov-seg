@@ -648,9 +648,7 @@ class SwinTransformerV2(nn.Module):
                                pretrained_window_size=pretrained_window_sizes[i_layer])
             self.layers.append(layer)
 
-        self.norm = norm_layer(self.num_features)
-        self.avgpool = nn.AdaptiveAvgPool1d(1)
-        self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
+
 
         num_features = [int(embed_dim * 2 ** i) for i in range(self.num_layers)]
         self.num_features = num_features
@@ -794,19 +792,7 @@ class D2SwinTransformerV2(SwinTransformerV2, Backbone):
         
         return outputs
     def output_shape(self):
-        # return_dict ={
-        #     name: ShapeSpec(
-        #         channels=self._out_feature_channels[name], stride=self._out_feature_strides[name]
-        #     )
-        #     for name in self._out_features
-        # }
-        # print(">>>>>>>>>>>>>>>>>>>return dict",return_dict) 
-        # return {
-        #     name: ShapeSpec(
-        #         channels=1536, stride=self._out_feature_strides[name]
-        #     )
-        #     for name in self._out_features
-        # }
+      
         return {
             name: ShapeSpec(
                 channels=self._out_feature_channels[name], stride=self._out_feature_strides[name]
