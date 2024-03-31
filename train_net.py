@@ -25,6 +25,7 @@ from detectron2.engine import (
     default_setup,
     launch,
 )
+
 from detectron2.evaluation import (
     DatasetEvaluator,
     CityscapesSemSegEvaluator,

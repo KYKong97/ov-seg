@@ -1,19 +1,21 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
-# Copyright (c) Meta Platforms, Inc. All Rights Reserved
-
 import logging
+import numpy as np
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import fvcore.nn.weight_init as weight_init
+import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.init import xavier_uniform_, constant_, uniform_, normal_
+from torch.cuda.amp import autocast
 
 from detectron2.config import configurable
-from detectron2.layers import Conv2d, ShapeSpec, get_norm
+from detectron2.layers import Conv2d, DeformConv, ShapeSpec, get_norm
 from detectron2.modeling import SEM_SEG_HEADS_REGISTRY
 
 from ..transformer.position_encoding import PositionEmbeddingSine
-from ..transformer.transformer import TransformerEncoder, TransformerEncoderLayer
+from ..transformer.transformer import TransformerEncoder, TransformerEncoderLayer, _get_clones, _get_activation_fn
 
 
 def build_pixel_decoder(cfg, input_shape):
@@ -31,7 +33,8 @@ def build_pixel_decoder(cfg, input_shape):
     return model
 
 
-# @SEM_SEG_HEADS_REGISTRY.register()
+# This is a modified FPN decoder.
+@SEM_SEG_HEADS_REGISTRY.register()
 class BasePixelDecoder(nn.Module):
     @configurable
     def __init__(
@@ -83,11 +86,7 @@ class BasePixelDecoder(nn.Module):
                 output_norm = get_norm(norm, conv_dim)
 
                 lateral_conv = Conv2d(
-                    in_channels,
-                    conv_dim,
-                    kernel_size=1,
-                    bias=use_bias,
-                    norm=lateral_norm,
+                    in_channels, conv_dim, kernel_size=1, bias=use_bias, norm=lateral_norm
                 )
                 output_conv = Conv2d(
                     conv_dim,
@@ -121,13 +120,13 @@ class BasePixelDecoder(nn.Module):
         )
         weight_init.c2_xavier_fill(self.mask_features)
 
+        self.maskformer_num_feature_levels = 3  # always use 3 scales
+
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
         ret = {}
         ret["input_shape"] = {
-            k: v
-            for k, v in input_shape.items()
-            if k in cfg.MODEL.SEM_SEG_HEAD.IN_FEATURES
+            k: v for k, v in input_shape.items() if k in cfg.MODEL.SEM_SEG_HEAD.IN_FEATURES
         }
         ret["conv_dim"] = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
         ret["mask_dim"] = cfg.MODEL.SEM_SEG_HEAD.MASK_DIM
@@ -135,6 +134,8 @@ class BasePixelDecoder(nn.Module):
         return ret
 
     def forward_features(self, features):
+        multi_scale_features = []
+        num_cur_levels = 0
         # Reverse feature maps into top-down order (from low to high resolution)
         for idx, f in enumerate(self.in_features[::-1]):
             x = features[f]
@@ -147,13 +148,14 @@ class BasePixelDecoder(nn.Module):
                 # Following FPN implementation, we use nearest upsampling here
                 y = cur_fpn + F.interpolate(y, size=cur_fpn.shape[-2:], mode="nearest")
                 y = output_conv(y)
-        return self.mask_features(y), None
+            if num_cur_levels < self.maskformer_num_feature_levels:
+                multi_scale_features.append(y)
+                num_cur_levels += 1
+        return self.mask_features(y), None, multi_scale_features
 
     def forward(self, features, targets=None):
         logger = logging.getLogger(__name__)
-        logger.warning(
-            "Calling forward() may cause unpredicted behavior of PixelDecoder module."
-        )
+        logger.warning("Calling forward() may cause unpredicted behavior of PixelDecoder module.")
         return self.forward_features(features)
 
 
@@ -174,9 +176,7 @@ class TransformerEncoderOnly(nn.Module):
             d_model, nhead, dim_feedforward, dropout, activation, normalize_before
         )
         encoder_norm = nn.LayerNorm(d_model) if normalize_before else None
-        self.encoder = TransformerEncoder(
-            encoder_layer, num_encoder_layers, encoder_norm
-        )
+        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
 
         self._reset_parameters()
 
@@ -200,7 +200,8 @@ class TransformerEncoderOnly(nn.Module):
         return memory.permute(1, 2, 0).view(bs, c, h, w)
 
 
-# @SEM_SEG_HEADS_REGISTRY.register()
+# This is a modified FPN decoder with extra Transformer encoder that processes the lowest-resolution feature map.
+@SEM_SEG_HEADS_REGISTRY.register()
 class TransformerEncoderPixelDecoder(BasePixelDecoder):
     @configurable
     def __init__(
@@ -281,6 +282,8 @@ class TransformerEncoderPixelDecoder(BasePixelDecoder):
         return ret
 
     def forward_features(self, features):
+        multi_scale_features = []
+        num_cur_levels = 0
         # Reverse feature maps into top-down order (from low to high resolution)
         for idx, f in enumerate(self.in_features[::-1]):
             x = features[f]
@@ -298,11 +301,12 @@ class TransformerEncoderPixelDecoder(BasePixelDecoder):
                 # Following FPN implementation, we use nearest upsampling here
                 y = cur_fpn + F.interpolate(y, size=cur_fpn.shape[-2:], mode="nearest")
                 y = output_conv(y)
-        return self.mask_features(y), transformer_encoder_features
+            if num_cur_levels < self.maskformer_num_feature_levels:
+                multi_scale_features.append(y)
+                num_cur_levels += 1
+        return self.mask_features(y), transformer_encoder_features, multi_scale_features
 
     def forward(self, features, targets=None):
         logger = logging.getLogger(__name__)
-        logger.warning(
-            "Calling forward() may cause unpredicted behavior of PixelDecoder module."
-        )
+        logger.warning("Calling forward() may cause unpredicted behavior of PixelDecoder module.")
         return self.forward_features(features)

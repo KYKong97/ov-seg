@@ -14,7 +14,7 @@ from torch.nn import functional as F
 from detectron2.config import configurable
 from detectron2.layers import Conv2d, ShapeSpec, get_norm
 from detectron2.modeling import SEM_SEG_HEADS_REGISTRY
-
+from ..transformer.maskformer_transformer_decoder import build_transformer_decoder
 from ..transformer.open_vocab_transformer_predictor import OpenVocabTransformerPredictor
 from .pixel_decoder import build_pixel_decoder
 
@@ -97,6 +97,15 @@ class OpenVocabMaskFormerHead(nn.Module):
 
     @classmethod
     def from_config(cls, cfg, input_shape: Dict[str, ShapeSpec]):
+        if cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "transformer_encoder":
+            transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
+        elif cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "pixel_embedding":
+            transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.MASK_DIM
+        elif cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "multi_scale_pixel_decoder":  # for maskformer2
+            transformer_predictor_in_channels = cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
+        else:
+            transformer_predictor_in_channels = input_shape[cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE].channels
+
         return {
             "input_shape": {
                 k: v
@@ -108,13 +117,18 @@ class OpenVocabMaskFormerHead(nn.Module):
             "pixel_decoder": build_pixel_decoder(cfg, input_shape),
             "loss_weight": cfg.MODEL.SEM_SEG_HEAD.LOSS_WEIGHT,
             "transformer_in_feature": cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE,
-            "transformer_predictor": OpenVocabTransformerPredictor(
+            "transformer_predictor":build_transformer_decoder(
                 cfg,
-                cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
-                if cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "transformer_encoder"
-                else input_shape[cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE].channels,
+                transformer_predictor_in_channels,
                 mask_classification=True,
             ),
+            # "transformer_predictor": OpenVocabTransformerPredictor(
+            #     cfg,
+            #     cfg.MODEL.SEM_SEG_HEAD.CONVS_DIM
+            #     if cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE == "transformer_encoder"
+            #     else input_shape[cfg.MODEL.MASK_FORMER.TRANSFORMER_IN_FEATURE].channels,
+            #     mask_classification=True,
+            # ),
         }
 
     def forward(self, features):

@@ -91,12 +91,14 @@ class MaskFormer(nn.Module):
         no_object_weight = cfg.MODEL.MASK_FORMER.NO_OBJECT_WEIGHT
         dice_weight = cfg.MODEL.MASK_FORMER.DICE_WEIGHT
         mask_weight = cfg.MODEL.MASK_FORMER.MASK_WEIGHT
+        class_weight = cfg.MODEL.MASK_FORMER.CLASS_WEIGHT
 
         # building criterion
         matcher = HungarianMatcher(
-            cost_class=1,
+            cost_class=class_weight,
             cost_mask=mask_weight,
             cost_dice=dice_weight,
+            num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
         )
 
         weight_dict = {"loss_ce": 1, "loss_mask": mask_weight, "loss_dice": dice_weight}
@@ -115,6 +117,9 @@ class MaskFormer(nn.Module):
             weight_dict=weight_dict,
             eos_coef=no_object_weight,
             losses=losses,
+            num_points=cfg.MODEL.MASK_FORMER.TRAIN_NUM_POINTS,
+            oversample_ratio=cfg.MODEL.MASK_FORMER.OVERSAMPLE_RATIO,
+            importance_sample_ratio=cfg.MODEL.MASK_FORMER.IMPORTANCE_SAMPLE_RATIO,
         )
 
         return {
